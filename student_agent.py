@@ -172,7 +172,7 @@ def solve_objects(scenario_context: str) -> list:
     init_text = _between(statement, "as initial conditions i have that,", "my goal is to have that")
     goal_text = _between(statement, "my goal is to have that", "my plan is as follows")
 
-    objects = sorted(set(re.findall(r"object ([a-z])", init_text + " " + goal_text)))
+    objects = _unique_in_order(re.findall(r"object ([a-z])", init_text + " " + goal_text))
     goals = re.findall(r"object ([a-z]) craves object ([a-z])", goal_text)
     if not objects or not goals:
         return []
@@ -238,6 +238,25 @@ def _object_successors(state: frozenset, objects: list, goals: list):
                 ns.discard(f"pain:{a}")
                 add(f"(overcome {a} {b})", ns)
 
+        prefer_bridge_overcome = (
+            f"pain:{a}" in state
+            and f"planet:{a}" not in state
+            and any(f"craves:{a}:{target}" not in state for target in target_order.get(a, []))
+        )
+        bridge_objects = set()
+        if prefer_bridge_overcome:
+            for b in objects:
+                if b in target_order.get(a, []) or a == b or f"province:{b}" not in state:
+                    continue
+                bridge_objects.add(b)
+                ns = set(state)
+                ns.add("harmony")
+                ns.add(f"province:{a}")
+                ns.add(f"craves:{a}:{b}")
+                ns.discard(f"province:{b}")
+                ns.discard(f"pain:{a}")
+                add(f"(overcome {a} {b})", ns)
+
         craves_order = target_order.get(a, []) + objects
         seen_b = set()
         for b in craves_order:
@@ -262,7 +281,13 @@ def _object_successors(state: frozenset, objects: list, goals: list):
             add(f"(succumb {a})", ns)
 
         for b in objects:
-            if b not in target_order.get(a, []) and f"pain:{a}" in state and f"province:{b}" in state and a != b:
+            if (
+                b not in target_order.get(a, [])
+                and b not in bridge_objects
+                and f"pain:{a}" in state
+                and f"province:{b}" in state
+                and a != b
+            ):
                 ns = set(state)
                 ns.add("harmony")
                 ns.add(f"province:{a}")
@@ -304,6 +329,9 @@ def _object_heuristic(state: frozenset, goals: list) -> int:
             missing -= 1
         elif any(f.startswith(f"craves:{a}:") for f in state) or f"planet:{a}" in state:
             prep += 1
+        if f"pain:{a}" not in state and not any(f.startswith(f"craves:{a}:") for f in state):
+            if f"province:{a}" not in state:
+                prep += 1
         if f"province:{b}" not in state:
             prep += 1
     return missing + prep
@@ -314,7 +342,7 @@ def solve_blocks(scenario_context: str) -> list:
     init_text = _between(statement, "as initial conditions i have that,", "my goal is to have that")
     goal_text = _between(statement, "my goal is to have that", "my plan is as follows")
 
-    blocks = sorted(set(re.findall(r"the ([a-z]+) block", init_text + " " + goal_text)))
+    blocks = _unique_in_order(re.findall(r"the ([a-z]+) block", init_text + " " + goal_text))
     if not blocks:
         return []
 
@@ -374,10 +402,29 @@ def _block_successors(state, blocks: list, goal_on: dict):
     if holding:
         preferred_support = goal_on.get(holding)
         preferred_supports = []
-        if preferred_support and preferred_support in clear:
+        preferred_ready = (
+            preferred_support
+            and preferred_support in clear
+            and (preferred_support not in goal_on or on.get(preferred_support) == goal_on[preferred_support])
+        )
+        if preferred_ready:
             preferred_supports.append(preferred_support)
 
         for support in preferred_supports:
+            new_on = dict(on)
+            new_on[holding] = support
+            successors.append((f"(mount_node {holding} {support})", make_state(new_on, None)))
+
+        buffer_supports = []
+        if preferred_support and not preferred_ready:
+            for support in _support_order(blocks, goal_on):
+                if support == holding or support == preferred_support or support not in clear:
+                    continue
+                if support in goal_on and on.get(support) != goal_on[support]:
+                    continue
+                buffer_supports.append(support)
+
+        for support in buffer_supports:
             new_on = dict(on)
             new_on[holding] = support
             successors.append((f"(mount_node {holding} {support})", make_state(new_on, None)))
@@ -387,7 +434,7 @@ def _block_successors(state, blocks: list, goal_on: dict):
         successors.append((f"(release_payload {holding})", make_state(new_on, None)))
 
         for support in _support_order(blocks, goal_on):
-            if support == holding or support not in clear or support in preferred_supports:
+            if support == holding or support not in clear or support in preferred_supports or support in buffer_supports:
                 continue
             new_on = dict(on)
             new_on[holding] = support
@@ -460,3 +507,14 @@ def _between(text: str, start: str, end: str) -> str:
     if end in text:
         text = text.split(end, 1)[0]
     return text
+
+
+def _unique_in_order(values: list) -> list:
+    result = []
+    seen = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result

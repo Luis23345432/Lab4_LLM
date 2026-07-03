@@ -16,3 +16,4 @@ checkpoints/
 *.safetensors
 wandb/
 runs/
+analyze_failures.py
