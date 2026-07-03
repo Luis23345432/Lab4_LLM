@@ -1,6 +1,6 @@
 # Laboratorio 4: Planning LLM
 
-Solucion para el laboratorio de planificacion con Qwen3-8B. No se entrena ni se hace fine-tuning del modelo.
+Solucion para el laboratorio de planificacion con `Qwen/Qwen3-8B` como modelo obligatorio. No se entrena ni se hace fine-tuning del modelo.
 
 ## Archivos principales
 
@@ -33,7 +33,7 @@ python dev_test.py
 python submit.py
 ```
 
-El agente usa un planificador deterministico para los dominios conocidos y mantiene Qwen3-8B como fallback deterministico si un caso no encaja con esos dominios.
+El agente implementa una arquitectura hibrida de planificacion: usa reglas deterministicas para normalizar, validar y parsear acciones, y mantiene integracion con Qwen3-8B en modo deterministico para resolver escenarios cuando se requiere inferencia del modelo.
 
 El archivo `submission.json` se genera como una lista de objetos con:
 
